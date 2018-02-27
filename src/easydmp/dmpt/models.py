@@ -417,6 +417,14 @@ class Section(DeletionMixin, RenumberMixin, models.Model):
             obj = obj.super_section
         return obj
 
+    def extract_data_for_section(self, data):
+        cleaned_data = {}
+        for question in self.questions.all():
+            answer = data.get(str(question.pk), None)
+            if answer:
+                cleaned_data[question.pk] = answer
+        return cleaned_data
+
     def find_minimal_path(self, data=None):
         minimal_qs = self.questions.filter(obligatory=True).order_by('position')
         if not data:
@@ -428,8 +436,9 @@ class Section(DeletionMixin, RenumberMixin, models.Model):
 
     # graphing code
     def find_path(self, data):
+        data = self.extract_data_for_section(data)
         if not data:
-            return []
+            return self.find_minimal_path()
         if not self.questions.exists():
             # No path in this section
             return []
@@ -726,28 +735,60 @@ class Question(DeletionMixin, RenumberMixin, models.Model):
             if edge_payload:
                 condition = str(getattr(edge_payload, 'legend', condition))
             node_payload = getattr(edge.next_node, 'payload', None)
+            if not node_payload:
+                next_obligatory = all_next_questions.filter(obligatory=True).order_by('position')
+                if next_obligatory:
+                    node_payload = next_obligatory[0]
             next_questions.append((condition, node_payload))
         next_questions = set(next_questions)
         return next_questions
 
     def get_next_question(self, answers=None, in_section=False):
         next_questions = self.get_all_next_questions()
+        next_obligatories = next_questions.filter(obligatory=True)
+
+        answered_pks = []
+        self_answered = False
+        if answers:
+            answered_pks = [int(pk) for pk in answers.keys()]
+            self_answered = self.pk in answered_pks
+
+        # Have to guess
+        if not self_answered:
+            if next_obligatories:
+                return next_obligatories[0]
+            if not in_section:
+                return self.get_first_question_in_next_section()
+            return None
+
+        # From this point on, self has an answer
         if not next_questions.exists():
-            return self.get_first_question_in_next_section()
+            if not in_section:
+                return self.get_first_question_in_next_section()
+            return None
 
         if not self.node:
             return next_questions[0]
 
-        if self.node.end and not in_section:
-            # Break out of section because fsa.end == True
-            return self.get_first_question_in_next_section()
+        if self.node.end:
+            # any obligatory questions after this one? go there
+            if next_obligatory.exists():
+                return next_obligatories[0]
+            # else: this was the last question in the section
+            if  not in_section:
+                return self.get_first_question_in_next_section()
 
         if not self.node.next_nodes.exists():
             return next_questions[0]
 
+        if str(self.pk) not in answers and self.is_last_in_section():
+            if not in_section:
+                return self.get_first_question_in_next_section()
+            return None
+
         data = self.map_answers_to_nodes(answers)
         next_node = self.node.get_next_node(data)
-        if next_node:
+        if next_node:  # Explicit next node
             # Break out of section because fsa.end == True
             if next_node.end and not in_section:
                 return self.get_first_question_in_next_section()
@@ -756,43 +797,42 @@ class Question(DeletionMixin, RenumberMixin, models.Model):
                 return next_node.payload
             except Question.DoesNotExist:
                 raise TemplateDesignError('Error in template design: next node ({}) is not hooked up to a question'.format(next_node))
-
+        else:  # Implicit next node
+            if next_obligatory:
+                return next_obligatory[0]
         return None
 
     def get_all_prev_questions(self):
         return Question.objects.filter(section=self.section, position__lt=self.position)
 
-    def get_prev_question(self, answers=None):
-        prev_questions = self.get_all_prev_questions()
+    def get_prev_question(self, answers=None, in_section=False):
+        all_prev_questions = self.get_all_prev_questions()
+        prev_obligatory = list(all_prev_questions.filter(obligatory=True))
+        prev_questions = all_prev_questions
+        answered_pks = []
+        if answers:
+            answered_pks = [int(pk) for pk in answers.keys()]
+            prev_questions = prev_questions.filter(pk__in=answered_pks)
         if not prev_questions.exists():
-            prev_section = self.section.get_prev_section()
-            if prev_section:
-                return prev_section.last_question
+            # Lets find a question in a previous section
+            if not in_section:
+                prev_section = self.section.get_prev_section()
+                if prev_section:
+                    return prev_section.last_question
             return None
 
-        if not self.node or self.node.start:
-            return list(prev_questions)[-1]
-
-        data = self.map_answers_to_nodes(answers)
-        prev_node = self.node.get_prev_node(data)
-        if prev_node:
-            try:
-                return prev_node.payload
-            except Question.DoesNotExist:
-                raise TemplateDesignError('Error in template design: prev node ({}) is not hooked up to a question'.format(prev_node))
-
-        return None
+        return list(prev_questions)[-1]
 
     def is_last_in_section(self):
-        if not self.get_all_next_questions().exists():
+        all_next_questions = self.get_all_next_questions()
+        if not all_next_questions.exists():
             return True
         if self.node:
             if self.node.end:
                 return True
-#             next_nodes = self.node.next_nodes.all()
-#             if next_nodes:
-# 
-#                 return True
+        obligatory = all_next_questions.filter(obligatory=True)
+        if self.obligatory and not obligatory.exists():
+            return True
         return False
 
 #     def get_next_via_path

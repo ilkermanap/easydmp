@@ -85,63 +85,60 @@ class NamedURLField(forms.MultiValueField):
         super().__init__(fields, *args, **kwargs)
 
     def compress(self, value):
-        if self.required and not value[0]:
-            raise ValidationError('URL not entered')
-        return {'url': value[0], 'name': value[1]}
+        if self.required:
+            if not value[0]:
+                raise ValidationError('URL not entered')
+            return {'url': value[0], 'name': value[1]}
+        return {}
 
 
-class ChoiceNotListedField(forms.MultiValueField):
+class NotListedMixin:
 
-    def __init__(self, attrs=None, choices=(), *args, **kwargs):
+    def __init__(self, widget, fields, attrs=None, choices=(), *args, **kwargs):
         error_messages = {
             'incomplete': 'At least one of the fields must be filled out',
         }
         kwargs['require_all_fields'] = True
+        self.original_required = kwargs.get('required', None)
         kwargs['required'] = False
+        super().__init__(fields=fields, widget=widget,
+                         error_messages=error_messages, *args, **kwargs)
+
+    def _validate(self, value):
+        values = (value.get('choices', False), value.get('not-listed', False))
+        if not any(values):
+            raise ValidationError(self.error_messages['incomplete'], code='incomplete')
+
+    def validate(self, value):
+        if self.original_required:
+            self._validate(value)
+
+    def compress(self, value):
+        if not any(value):
+            return {}
+        return {'choices': value[0], 'not-listed': value[1]}
+
+
+class ChoiceNotListedField(NotListedMixin, forms.MultiValueField):
+
+    def __init__(self, attrs=None, choices=(), *args, **kwargs):
         widget = SelectNotListed(attrs=attrs, choices=choices)
         fields = [
             forms.ChoiceField(required=False, choices=choices),
             forms.BooleanField(required=False),
         ]
-        super().__init__(fields=fields, error_messages=error_messages,
-                         widget=widget, *args, **kwargs)
-
-    def validate(self, value):
-        values = (value.get('choices', False), value.get('not-listed', False))
-        if not any(values):
-            raise ValidationError(self.error_messages['incomplete'], code='incomplete')
-
-    def compress(self, value):
-        if not any(value):
-            raise ValidationError('At least one of the fields must be filled out')
-        return {'choices': value[0], 'not-listed': value[1]}
+        super().__init__(fields=fields, widget=widget, *args, **kwargs)
 
 
-class MultipleChoiceNotListedField(forms.MultiValueField):
+class MultipleChoiceNotListedField(NotListedMixin, forms.MultiValueField):
 
     def __init__(self, attrs=None, choices=(), *args, **kwargs):
-        error_messages = {
-            'incomplete': 'At least one of the fields must be filled out',
-        }
-        kwargs['require_all_fields'] = True
-        kwargs['required'] = False
         widget = SelectMultipleNotListed(attrs=attrs, choices=choices)
         fields = [
             forms.MultipleChoiceField(required=False, choices=choices),
             forms.BooleanField(required=False),
         ]
-        super().__init__(fields=fields, error_messages=error_messages,
-                         widget=widget, *args, **kwargs)
-
-    def validate(self, value):
-        values = (value.get('choices', False), value.get('not-listed', False))
-        if not any(values):
-            raise ValidationError(self.error_messages['incomplete'], code='incomplete')
-
-    def compress(self, value):
-        if not any(value):
-            raise ValidationError('At least one of the fields must be filled out')
-        return {'choices': value[0], 'not-listed': value[1]}
+        super().__init__(fields=fields, widget=widget, *args, **kwargs)
 
 
 class DMPTypedReasonField(forms.MultiValueField):

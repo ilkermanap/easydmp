@@ -85,7 +85,6 @@ class AbstractNodeMixin():
 class AbstractNodeForm(AbstractNodeMixin, forms.Form):
 
     def __init__(self, **kwargs):
-        self.has_prevquestion = kwargs.pop('has_prevquestion', False)
         super().__init__(**kwargs)
         self._add_choice_field()
 
@@ -114,6 +113,7 @@ class BooleanForm(AbstractNodeForm):
             (False, 'No'),
         )
         self.fields['choice'] = forms.ChoiceField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=choices,
@@ -149,6 +149,7 @@ class ChoiceForm(AbstractNodeForm):
                 v = k
             fixed_choices.append((k, v))
         self.fields['choice'] = forms.ChoiceField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=fixed_choices,
@@ -161,6 +162,7 @@ class MultipleChoiceOneTextForm(AbstractNodeForm):
     def _add_choice_field(self):
         choices = self.question.canned_answers.values_list('choice', 'choice')
         self.fields['choice'] = forms.MultipleChoiceField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=choices,
@@ -183,14 +185,14 @@ class DateRangeForm(AbstractNodeForm):
 
     def _add_choice_field(self):
         self.fields['choice'] = DateRangeField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
         )
 
     def serialize(self):
-        if self.is_bound:
-            data = self.cleaned_data['choice']
-            assert data, "Dateranges may not be empty"
+        data = self.cleaned_data.get('choice', None)
+        if self.is_bound and data is not None:
             start, end = data.lower, data.upper
             return {
                 'choice':
@@ -211,6 +213,7 @@ class ReasonForm(AbstractNodeForm):
 
     def _add_choice_field(self):
         self.fields['choice'] = forms.CharField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             widget=forms.Textarea,
@@ -221,8 +224,9 @@ class PositiveIntegerForm(AbstractNodeForm):
 
     def _add_choice_field(self):
         self.fields['choice'] = forms.IntegerField(
-            min_value=1,
+            required=False,
             label=self.label,
+            min_value=1,
             help_text=self.help_text,
         )
 
@@ -238,6 +242,7 @@ class ExternalChoiceForm(AbstractNodeForm):
         qs = EEStoreCache.objects.filter(source__in=sources)
         choices = qs.values_list('eestore_pid', 'name')
         self.fields['choice'] = forms.ChoiceField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=choices,
@@ -256,6 +261,7 @@ class ExternalChoiceNotListedForm(AbstractNodeForm):
         qs = EEStoreCache.objects.filter(source__in=sources)
         choices = qs.values_list('eestore_pid', 'name')
         self.fields['choice'] = ChoiceNotListedField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=choices,
@@ -273,6 +279,7 @@ class ExternalMultipleChoiceOneTextForm(AbstractNodeForm):
         qs = EEStoreCache.objects.filter(source__in=sources)
         choices = qs.values_list('eestore_pid', 'name')
         self.fields['choice'] = forms.MultipleChoiceField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=choices,
@@ -291,6 +298,7 @@ class ExternalMultipleChoiceNotListedOneTextForm(AbstractNodeForm):
         qs = EEStoreCache.objects.filter(source__in=sources)
         choices = qs.values_list('eestore_pid', 'name')
         self.fields['choice'] = MultipleChoiceNotListedField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
             choices=choices,
@@ -302,6 +310,7 @@ class NamedURLForm(AbstractNodeForm):
 
     def _add_choice_field(self):
         self.fields['choice'] = NamedURLField(
+            required=False,
             label=self.label,
             help_text=self.help_text,
         )
@@ -351,8 +360,8 @@ class AbstractMultiNamedURLOneTextFormSet(AbstractNodeFormSet):
 
 MultiNamedURLOneTextFormSet = forms.formset_factory(
     NamedURLFormSetForm,
-    min_num=1,
     formset=AbstractMultiNamedURLOneTextFormSet,
+    extra=2,
     can_delete=True,
 )
 
@@ -377,8 +386,8 @@ class AbstractMultiDMPTypedReasonOneTextFormSet(AbstractNodeFormSet):
 
 MultiDMPTypedReasonOneTextFormSet = forms.formset_factory(
     DMPTypedReasonFormSetForm,
-    min_num=1,
     formset=AbstractMultiDMPTypedReasonOneTextFormSet,
+    extra=2,
     can_delete=True,
 )
 

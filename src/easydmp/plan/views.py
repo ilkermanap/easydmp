@@ -288,11 +288,9 @@ class NewQuestionView(AbstractQuestionView):
         return super().get_context_data(**kwargs)
 
     def get_notesform(self, **_):
-        form = None
         form_kwargs = self.get_form_kwargs()
         question = self.get_question()
-        if question.has_notes:
-            form = NotesForm(**form_kwargs)
+        form = NotesForm(**form_kwargs)
         return form
 
     def get_form(self, **_):
@@ -334,23 +332,30 @@ class NewQuestionView(AbstractQuestionView):
 
     def form_valid(self, form, notesform):
         notes = notesform.cleaned_data.get('notes', '')
-        state_switch = form.serialize()
-        state_switch['notes'] = notes
-        question_pk = self.get_question_pk()
-        # save change
-        current_data = self.object.data
-        current_data[question_pk] = state_switch
-        self.object.data = current_data
-        previous_data = self.object.previous_data
-        previous_data[question_pk] = state_switch
-        self.object.previous_data = previous_data
-        self.object.save(question=self.get_question())
-        # remove invalidated states
-#         paths_from = self.get_template().find_paths_from(question_pk)
-#         invalidated_states = set(chain(*paths_from))
-#         invalidated_states.discard(None)
-#         invalidated_states.discard(question_pk)
-#         self.delete_statedata(*invalidated_states)
+        cleaned_data = form.cleaned_data
+        choice = None
+        if isinstance(cleaned_data, dict):
+            choice = cleaned_data.get('choice', None)
+        elif isinstance(cleaned_data, list):
+            choice = any([row.get('choice', None) for row in cleaned_data if row])
+        if choice:
+            state_switch = form.serialize()
+            state_switch['notes'] = notes
+            question_pk = self.get_question_pk()
+            # save change
+            current_data = self.object.data
+            current_data[question_pk] = state_switch
+            self.object.data = current_data
+            previous_data = self.object.previous_data
+            previous_data[question_pk] = state_switch
+            self.object.previous_data = previous_data
+            self.object.save(question=self.get_question())
+            # remove invalidated states
+    #         paths_from = self.get_template().find_paths_from(question_pk)
+    #         invalidated_states = set(chain(*paths_from))
+    #         invalidated_states.discard(None)
+    #         invalidated_states.discard(question_pk)
+    #         self.delete_statedata(*invalidated_states)
         return HttpResponseRedirect(self.get_success_url())
 
     def form_invalid(self, form, notesform):
